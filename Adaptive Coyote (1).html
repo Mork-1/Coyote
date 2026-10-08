@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Adaptive Coyote</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f3eff6;--fg:#1d1424;--card:#fff;--mut:#6c5f78;--acc:#7a2dd6;--ln:#ddd3e6;--bad:#c4162a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#150f1b;--fg:#efe8f6;--card:#221a2b;--mut:#a396b3;--acc:#b98cff;--ln:#35293f;--bad:#ff5468}}
+:root[data-theme="dark"]{--bg:#150f1b;--fg:#efe8f6;--card:#221a2b;--mut:#a396b3;--acc:#b98cff;--ln:#35293f;--bad:#ff5468}
+*{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;padding:12px;max-width:560px;margin-inline:auto}
+h1{font-size:20px;margin:4px 0 10px}
+section{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:10px}
+button{font:inherit;border:1px solid var(--ln);background:var(--card);color:var(--fg);border-radius:10px;padding:12px;min-height:44px}
+button.p{background:var(--acc);color:#fff;border:0}
+#stop{position:sticky;top:env(safe-area-inset-top,0px);width:100%;background:var(--bad);color:#fff;border:0;font-weight:700;font-size:18px;min-height:56px;z-index:5;margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.row>*{flex:1}
+label{display:block;font-size:14px;color:var(--mut);margin-top:8px}
+input[type=range]{width:100%}
+.bar{height:12px;background:var(--ln);border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--acc)}
+#st{font-size:14px;color:var(--mut);min-height:20px}
+video{width:100%;max-height:160px;border-radius:8px;background:#000;display:none}
+small{color:var(--mut)}
+</style>
+</head>
+<body>
+<h1>Adaptive Coyote</h1>
+<button id="stop">STOP ALL</button>
+<small id="diag"></small>
+
+<section>
+<div class="row"><button class="p" id="conn">Connect Coyote 3</button><button id="connAll">Show all devices</button><span id="bat">–</span></div>
+<label>Max strength A: <b id="vA">30</b> (hard cap, 0–200)</label>
+<input type="range" id="capA" min="0" max="200" value="30">
+<label>Max strength B: <b id="vB">30</b></label>
+<input type="range" id="capB" min="0" max="200" value="30">
+<label>Pulse feel (period ms, lower = buzzier): <b id="vF">20</b></label>
+<input type="range" id="freq" min="10" max="150" value="20">
+<label>Pattern</label>
+<select id="pat" style="width:100%;padding:10px;font:inherit"><option value="wave">Slow wave</option><option value="pulse">Pulses</option><option value="rand">Random</option><option value="flat">Steady</option></select>
+</section>
+
+<section>
+<div class="row"><button class="p" id="start">Start session</button><button id="manual">I'm close</button><button id="cum">I'm cumming</button></div>
+<div class="row"><button class="p" id="like">Love this, more</button><button id="less">Too much</button></div>
+<small id="lk">Tap "Love this" whenever it feels great. It learns the feel and stays around it.</small>
+<label><input type="checkbox" id="edge" checked> Edging (back off when near the edge)</label>
+<label>Ramp speed: <b id="vR">5</b></label>
+<input type="range" id="ramp" min="1" max="10" value="5">
+<label>Rest after edge (sec): <b id="vT">20</b></label>
+<input type="range" id="rest" min="5" max="90" value="20">
+<div style="margin-top:10px">Output level</div><div class="bar"><i id="mL"></i></div>
+<div style="margin-top:8px">Arousal estimate</div><div class="bar"><i id="mA"></i></div>
+<div style="margin-top:8px">Motion</div><div class="bar"><i id="mM"></i></div>
+<div style="margin-top:8px">Twitch rhythm (up/down)</div><div class="bar"><i id="mT"></i></div>
+<p id="st">Not connected.</p>
+</section>
+
+<section>
+<div class="row"><button id="cam">Start camera</button><button id="base">Set baseline</button><button id="pv">Preview</button></div>
+<video id="vid" playsinline muted></video>
+<label>Arousal sensitivity: <b id="vS">1.0</b></label>
+<input type="range" id="sens" min="0.2" max="4" step="0.1" value="1">
+<label>Climax motion sensitivity: <b id="vC">1.0</b></label>
+<input type="range" id="csens" min="0.2" max="4" step="0.1" value="1">
+<small>Best view: phone propped to the side so it sees your penis in profile, steady light. Set the baseline while soft. It reads size growth, upward lift and up/down twitching. Camera frames are analysed on this phone only, as a 32×24 grayscale grid. Nothing is saved or uploaded. Prop the phone still, steady light, then press Set baseline while soft. Detection is a rough estimate of change versus baseline, so tune the sliders and use the manual buttons as the real override.</small>
+</section>
+
+<script>
+const $=id=>document.getElementById(id);
+const SVC='0000180c-0000-1000-8000-00805f9b34fb',WR='0000150a-0000-1000-8000-00805f9b34fb',NT='0000150b-0000-1000-8000-00805f9b34fb';
+const BSVC='0000180a-0000-1000-8000-00805f9b34fb',BCH='00001500-0000-1000-8000-00805f9b34fb';
+let chW=null,dev=null,serial=0,lastA=-1,lastB=-1,pendingSerial=0,tick=0;
+let running=false,level=0,state='idle',stateT=0,highT=0,edges=0,climaxT=0;
+let arousal=0,motion=0,base=null,prev=null,camOn=false,stream=null;
+const S={};
+(function(){let pp=document.permissionsPolicy||document.featurePolicy,f=[];
+ const al=x=>{try{return pp?pp.allowsFeature(x):'?'}catch(e){return '?'}};
+ f.push('framed: '+(window.self!==window.top?'YES':'no'));f.push('secure: '+window.isSecureContext);
+ f.push('camera allowed by page: '+al('camera'));f.push('bluetooth allowed by page: '+al('bluetooth'));
+ document.getElementById('diag').textContent=f.join(' | ');
+ try{navigator.permissions.query({name:'camera'}).then(r=>{document.getElementById('diag').textContent+=' | camera site setting: '+r.state})}catch(e){}})();
+function st(t){$('st').textContent=t}
+function bind(id,v,f){const e=$(id);const u=()=>{$(v).textContent=f?f(e.value):e.value};e.oninput=()=>{u();if(id=='capA'||id=='capB')sendLimit()};u()}
+bind('capA','vA');bind('capB','vB');bind('freq','vF');bind('ramp','vR');bind('rest','vT');bind('sens','vS',x=>(+x).toFixed(1));bind('csens','vC',x=>(+x).toFixed(1));
+
+/* ---- Bluetooth ---- */
+function enc(ms){ms=Math.round(ms);if(ms<=100)return ms;if(ms<=600)return Math.round((ms-100)/5+100);return Math.round((ms-600)/10+200)}
+async function wr(b){if(!chW)return;try{const d=new Uint8Array(b);chW.writeValueWithoutResponse?await chW.writeValueWithoutResponse(d):await chW.writeValue(d)}catch(e){}}
+function sendLimit(){wr([0xBF,+$('capA').value,+$('capB').value,160,160,0,0])}
+async function doConnect(all){
+ if(!navigator.bluetooth){st('Web Bluetooth needs Chrome on Android. Open this page directly in Chrome.');return}
+ try{
+  dev=await navigator.bluetooth.requestDevice(all?{acceptAllDevices:true,optionalServices:[SVC,BSVC]}:{filters:[{namePrefix:'47L'},{services:[SVC]}],optionalServices:[SVC,BSVC]});
+  dev.addEventListener('gattserverdisconnected',()=>{chW=null;running=false;state='idle';st('Disconnected. Output stopped.');$('start').textContent='Start session'});
+  const g=await dev.gatt.connect();const s=await g.getPrimaryService(SVC);
+  chW=await s.getCharacteristic(WR);
+  try{const n=await s.getCharacteristic(NT);await n.startNotifications();n.addEventListener('characteristicvaluechanged',e=>{const v=e.target.value;if(v.getUint8(0)==0xB1){}})}catch(e){}
+  try{const b=await (await g.getPrimaryService(BSVC)).getCharacteristic(BCH);const v=await b.readValue();$('bat').textContent=v.getUint8(0)+'%'}catch(e){}
+  sendLimit();lastA=lastB=-1;st('Connected. Strength starts at 0.');
+ }catch(e){st('Connect failed ('+e.name+'): '+e.message+(all?'':' Try "Show all devices".'))}
+}
+$('conn').onclick=()=>doConnect(false);$('connAll').onclick=()=>doConnect(true);
+
+/* ---- waveform ---- */
+function shape(t,k){const p=$('pat').value;
+ if(p=='flat')return 1;
+ if(p=='wave')return .35+.65*(.5+.5*Math.sin(t/1000*2*Math.PI/4+k));
+ if(p=='pulse')return ((t/1000*2+k*.3)%1)<.5?1:.1;
+ return .3+.7*Math.random()}
+function frame(){
+ tick++;const now=performance.now();
+ const sa=Math.round(level*$('capA').value),sb=Math.round(level*$('capB').value);
+ let mode=0,A=0,B=0;
+ if(sa!==lastA){mode|=3<<2;A=sa;lastA=sa}
+ if(sb!==lastB){mode|=3;B=sb;lastB=sb}
+ let hdr=0;if(mode){serial=serial%15+1;hdr=serial<<4}
+ const f=enc(+$('freq').value);
+ const msg=[0xB0,hdr|mode,A,B];
+ const ia=[],ib=[];
+ for(let i=0;i<4;i++){const t=now+i*25;ia.push(Math.round(100*shape(t,0)));ib.push(Math.round(100*shape(t,1.5)))}
+ msg.push(f,f,f,f,...ia,f,f,f,f,...ib);
+ return msg}
+setInterval(()=>{if(chW){ if(level<=0&&lastA<=0&&lastB<=0){wr([0xB0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);} else wr(frame()) }},100);
+
+/* ---- engine (runs every 100ms) ---- */
+function setState(s){state=s;stateT=0}
+setInterval(()=>{
+ const dt=.1;stateT+=dt;
+ if(running&&chW){
+  const rate=$('ramp').value*.0012; // fraction of cap per tick
+  if(state=='build'){
+   level=Math.min(1,level+rate*(1.3-arousal));
+   if($('edge').checked&&arousal>.75){highT+=dt}else highT=Math.max(0,highT-dt);
+   if(highT>2.5){edges++;highT=0;setState('rest');st('Near the edge. Backing off (edge '+edges+').')}
+  }else if(state=='rest'){
+   level=Math.max(0,level-.02);
+   if(stateT>+$('rest').value&&arousal<.6){level=Math.max(.2,level);setState('build');st('Building again.')}
+  }else if(state=='after'){
+   level=Math.max(0,level-.012);
+   if(level<=0){running=false;setState('idle');$('start').textContent='Start session';st('Session finished.')}
+  }
+  // climax detection from motion burst while aroused
+  if(camOn&&arousal>.5&&state!='after'&&(twitch>=1||motion>.35/$('csens').value)){climaxT+=dt;if(climaxT>=1.5)doClimax()}else climaxT=Math.max(0,climaxT-dt);
+ }else if(level>0){level=Math.max(0,level-.05)}
+ $('mL').style.width=(level*100)+'%';$('mA').style.width=(arousal*100)+'%';$('mM').style.width=Math.min(100,motion*100)+'%';$('mT').style.width=(twitch*100)+'%';
+},100);
+let liked=[],expT=0;
+function likedFreq(){if(!liked.length)return null;let f=0,w=0;liked.forEach((l,i)=>{const k=1+i*.5;f+=l.f*k;w+=k});return f/w}
+function likedPat(){const c={};liked.forEach(l=>c[l.pat]=(c[l.pat]||0)+1);return Object.keys(c).sort((a,b)=>c[b]-c[a])[0]}
+function explore(){
+ const c=likedFreq(),spread=c?4:12,b=c??+$('freq').value;
+ const nf=Math.max(10,Math.min(150,Math.round(b+(Math.random()*2-1)*spread)));
+ $('freq').value=nf;$('vF').textContent=nf;
+ const ps=['wave','pulse','rand','flat'];
+ if(!liked.length){if(Math.random()<.3)$('pat').value=ps[Math.floor(Math.random()*4)]}
+ else $('pat').value=Math.random()<.85?likedPat():ps[Math.floor(Math.random()*4)];
+}
+setInterval(()=>{if(running&&state=='build'){expT+=.1;if(expT>12){expT=0;explore()}}},100);
+$('like').onclick=()=>{if(!running)return;liked.push({f:+$('freq').value,pat:$('pat').value,lvl:level});if(liked.length>8)liked.shift();
+ level=Math.min(1,level+.08);expT=-18; // hold this feel ~30s before drifting
+ $('lk').textContent='Saved '+liked.length+' favourite'+(liked.length>1?'s':'')+'. Staying near this feel and nudging it up.';st('More of this.')};
+$('less').onclick=()=>{level=Math.max(0,level-.15);expT=0;st('Easing off.')};
+function doClimax(){climaxT=0;setState('after');st('Climax detected. Ramping down.')}
+
+/* ---- camera ---- */
+const W=48,H=36,N=W*H;const cv=document.createElement('canvas');cv.width=W;cv.height=H;const cx=cv.getContext('2d',{willReadFrequently:true});
+function grab(){cx.drawImage($('vid'),0,0,W,H);const d=cx.getImageData(0,0,W,H).data;const g=new Float32Array(N);for(let i=0;i<N;i++)g[i]=.3*d[i*4]+.59*d[i*4+1]+.11*d[i*4+2];return g}
+$('cam').onclick=async()=>{
+ if(camOn){stream.getTracks().forEach(t=>t.stop());camOn=false;$('cam').textContent='Start camera';return}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:320,height:240}});
+  $('vid').srcObject=stream;await $('vid').play();camOn=true;$('cam').textContent='Stop camera';st('Camera on. Set a baseline when ready.')}
+ catch(e){st('Camera blocked: '+e.message)}};
+$('pv').onclick=()=>{const v=$('vid');v.style.display=v.style.display=='block'?'none':'block'};
+$('base').onclick=()=>{if(!camOn){st('Start the camera first.');return}base=grab();arousal=0;cy0=null;cyPrev=null;cySm=null;revs=[];rise=0;areaS=0;st('Baseline saved.')};
+let cy0=null,cyPrev=null,cySm=null,vSign=0,revs=[],twitch=0,rise=0,areaS=0;
+setInterval(()=>{
+ if(!camOn||$('vid').readyState<2)return;
+ const g=grab();let m=0;
+ if(prev){for(let i=0;i<N;i++)m+=Math.abs(g[i]-prev[i]);m/=N}
+ prev=g;const mm=Math.min(1,m/20);motion=motion*.6+mm*.4;
+ if(!base||mm>.7)return; // whole-frame jolt (phone bumped): ignore
+ let c=0,sy=0;
+ for(let i=0;i<N;i++){if(Math.abs(g[i]-base[i])>28){c++;sy+=Math.floor(i/W)}}
+ areaS=areaS*.85+(c/N)*.15; // growth in size vs baseline
+ if(c>6){
+  const cy=sy/c;cySm=cySm==null?cy:cySm*.5+cy*.5;
+  if(cy0==null&&areaS>.02)cy0=cySm;
+  if(cy0!=null)rise=Math.max(0,Math.min(1,(cy0-cySm)/(H*.12))); // lifting upward
+  if(cyPrev!=null){const v=cySm-cyPrev,th=.25/$('csens').value;
+   if(Math.abs(v)>th){const sg=Math.sign(v);if(vSign&&sg!==vSign)revs.push(performance.now());vSign=sg}}
+  cyPrev=cySm}
+ const now=performance.now();revs=revs.filter(t=>now-t<3000);
+ twitch=Math.min(1,revs.length/4);
+ const target=Math.min(1,areaS*4*$('sens').value*.6+rise*.4);
+ arousal=arousal*.9+Math.max(target,twitch>=.5?.85:0)*.1;
+},100);
+
+/* ---- controls ---- */
+$('start').onclick=()=>{
+ if(!chW){st('Connect the Coyote first.');return}
+ if(running){running=false;state='idle';st('Paused. Fading to zero.');$('start').textContent='Start session';return}
+ running=true;level=0;edges=0;highT=0;setState('build');$('start').textContent='Pause';st('Ramping up from zero.');
+ try{navigator.wakeLock&&navigator.wakeLock.request('screen')}catch(e){}};
+$('manual').onclick=()=>{if(running){edges++;setState('rest');st('Manual edge. Resting.')}};
+$('cum').onclick=()=>{if(running)doClimax()};
+function stopAll(){running=false;state='idle';level=0;lastA=lastB=-1;
+ if(chW){serial=serial%15+1;wr([0xB0,(serial<<4)|0xF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])}
+ $('start').textContent='Start session';st('STOPPED. Output is zero.')}
+$('stop').onclick=stopAll;
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)stopAll()});
+</script>
+</body>
+</html>
